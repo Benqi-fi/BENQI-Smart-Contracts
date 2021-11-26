@@ -1279,7 +1279,8 @@ contract Comptroller is ComptrollerVXStorage, ComptrollerInterface, ComptrollerE
         } else if (rewardType == 1) {
             uint avaxRemaining = address(this).balance;
             if (amount > 0 && amount <= avaxRemaining) {
-                user.transfer(amount);
+                (bool success, ) = user.call{value: amount}("");
+                require(success, "Address: unable to send value, user may have reverted");
                 return 0;
             }
         }

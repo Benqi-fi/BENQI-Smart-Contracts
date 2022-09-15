@@ -110,8 +110,8 @@ contract ComptrollerVXStorage is UnitrollerAdminStorage {
     /// @notice The rate at which the flywheel distributes reward, per timestamp
     mapping(uint8 => uint) rewardRate;
 
-    /// @notice The portion of reward rate that each market currently receives
-    mapping(uint8 => mapping(address => uint)) public rewardSpeeds;
+    /// @notice The portion of reward rate that each market currently receives for supplying
+    mapping(uint8 => mapping(address => uint)) public supplyRewardSpeeds;
 
     /// @notice The QI/AVAX market supply state for each market
     mapping(uint8 => mapping(address => RewardMarketState)) public rewardSupplyState;
@@ -130,4 +130,7 @@ contract ComptrollerVXStorage is UnitrollerAdminStorage {
 
     /// @notice QI token contract address
     address public qiAddress;
+
+    /// @notice The portion of reward rate that each market currently receives for borrowing
+    mapping(uint8 => mapping(address => uint)) public borrowRewardSpeeds;
 }

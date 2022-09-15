@@ -43,8 +43,11 @@ contract Comptroller is ComptrollerVXStorage, ComptrollerInterface, ComptrollerE
     /// @notice Emitted when an action is paused on a market
     event ActionPaused(QiToken qiToken, string action, bool pauseState);
 
-    /// @notice Emitted when a new BENQI or AVAX speed is calculated for a market
-    event SpeedUpdated(uint8 tokenType, QiToken indexed qiToken, uint newSpeed);
+    /// @notice Emitted when supplier reward speed is updated
+    event SupplyRewardSpeedUpdated(uint8 rewardToken, QiToken indexed qiToken, uint newSupplyRewardSpeed);
+
+    /// @notice Emitted when borrower reward speed is updated
+    event BorrowRewardSpeedUpdated(uint8 rewardToken, QiToken indexed qiToken, uint newBorrowRewardSpeed);
 
     /// @notice Emitted when a new BENQI speed is set for a contributor
     event ContributorQiSpeedUpdated(address indexed contributor, uint newSpeed);
@@ -1050,22 +1053,21 @@ contract Comptroller is ComptrollerVXStorage, ComptrollerInterface, ComptrollerE
     /*** Benqi Distribution ***/
 
     /**
-     * @notice Set BENQI/AVAX speed for a single market
+     * @notice Set reward speed for a single market
      * @param rewardType  0: Qi, 1: Avax
-     * @param qiToken The market whose BENQI speed to update
-     * @param newSpeed New BENQI or AVAX speed for market
+     * @param qiToken Market whose speed to update
+     * @param newSupplyRewardSpeed New supply speed
+     * @param newBorrowRewardSpeed New borrow speed
      */
-    function setRewardSpeedInternal(uint8 rewardType, QiToken qiToken, uint newSpeed) internal {
-        uint currentRewardSpeed = rewardSpeeds[rewardType][address(qiToken)];
-        if (currentRewardSpeed != 0) {
-            // note that BENQI speed could be set to 0 to halt liquidity rewards for a market
-            Exp memory borrowIndex = Exp({mantissa: qiToken.borrowIndex()});
-            updateRewardSupplyIndex(rewardType,address(qiToken));
-            updateRewardBorrowIndex(rewardType,address(qiToken), borrowIndex);
-        } else if (newSpeed != 0) {
-            // Add the BENQI market
+    function setRewardSpeedInternal(uint8 rewardType, QiToken qiToken, uint newSupplyRewardSpeed, uint newBorrowRewardSpeed) internal {
+        uint currentSupplyRewardSpeed = supplyRewardSpeeds[rewardType][address(qiToken)];
+        uint currentBorrowRewardSpeed = borrowRewardSpeeds[rewardType][address(qiToken)];
+
+        if (currentSupplyRewardSpeed != 0) {
+            updateRewardSupplyIndex(rewardType, address(qiToken));
+        } else if (newSupplyRewardSpeed != 0) {
             Market storage market = markets[address(qiToken)];
-            require(market.isListed == true, "benqi market is not listed");
+            require(market.isListed, "Market is not listed");
 
             if (rewardSupplyState[rewardType][address(qiToken)].index == 0 && rewardSupplyState[rewardType][address(qiToken)].timestamp == 0) {
                 rewardSupplyState[rewardType][address(qiToken)] = RewardMarketState({
@@ -1073,6 +1075,14 @@ contract Comptroller is ComptrollerVXStorage, ComptrollerInterface, ComptrollerE
                     timestamp: safe32(getBlockTimestamp(), "block timestamp exceeds 32 bits")
                 });
             }
+        }
+
+        if (currentBorrowRewardSpeed != 0) {
+            Exp memory borrowIndex = Exp({ mantissa: qiToken.borrowIndex() });
+            updateRewardBorrowIndex(rewardType, address(qiToken), borrowIndex);
+        } else if (newBorrowRewardSpeed != 0) {
+            Market storage market = markets[address(qiToken)];
+            require(market.isListed, "Market is not listed");
 
             if (rewardBorrowState[rewardType][address(qiToken)].index == 0 && rewardBorrowState[rewardType][address(qiToken)].timestamp == 0) {
                 rewardBorrowState[rewardType][address(qiToken)] = RewardMarketState({
@@ -1080,11 +1090,17 @@ contract Comptroller is ComptrollerVXStorage, ComptrollerInterface, ComptrollerE
                     timestamp: safe32(getBlockTimestamp(), "block timestamp exceeds 32 bits")
                 });
             }
+
         }
 
-        if (currentRewardSpeed != newSpeed) {
-            rewardSpeeds[rewardType][address(qiToken)] = newSpeed;
-            emit SpeedUpdated(rewardType, qiToken, newSpeed);
+        if (currentSupplyRewardSpeed != newSupplyRewardSpeed) {
+            supplyRewardSpeeds[rewardType][address(qiToken)] = newSupplyRewardSpeed;
+            emit SupplyRewardSpeedUpdated(rewardType, qiToken, newSupplyRewardSpeed);
+        }
+
+        if (currentBorrowRewardSpeed != newBorrowRewardSpeed) {
+            borrowRewardSpeeds[rewardType][address(qiToken)] = newBorrowRewardSpeed;
+            emit BorrowRewardSpeedUpdated(rewardType, qiToken, newBorrowRewardSpeed);
         }
     }
 
@@ -1096,7 +1112,7 @@ contract Comptroller is ComptrollerVXStorage, ComptrollerInterface, ComptrollerE
     function updateRewardSupplyIndex(uint8 rewardType, address qiToken) internal {
         require(rewardType <= 1, "rewardType is invalid"); 
         RewardMarketState storage supplyState = rewardSupplyState[rewardType][qiToken];
-        uint supplySpeed = rewardSpeeds[rewardType][qiToken];
+        uint supplySpeed = supplyRewardSpeeds[rewardType][qiToken];
         uint blockTimestamp = getBlockTimestamp();
         uint deltaTimestamps = sub_(blockTimestamp, uint(supplyState.timestamp));
         if (deltaTimestamps > 0 && supplySpeed > 0) {
@@ -1121,7 +1137,7 @@ contract Comptroller is ComptrollerVXStorage, ComptrollerInterface, ComptrollerE
     function updateRewardBorrowIndex(uint8 rewardType, address qiToken, Exp memory marketBorrowIndex) internal {
         require(rewardType <= 1, "rewardType is invalid"); 
         RewardMarketState storage borrowState = rewardBorrowState[rewardType][qiToken];
-        uint borrowSpeed = rewardSpeeds[rewardType][qiToken];
+        uint borrowSpeed = borrowRewardSpeeds[rewardType][qiToken];
         uint blockTimestamp = getBlockTimestamp();
         uint deltaTimestamps = sub_(blockTimestamp, uint(borrowState.timestamp));
         if (deltaTimestamps > 0 && borrowSpeed > 0) {
@@ -1248,14 +1264,14 @@ contract Comptroller is ComptrollerVXStorage, ComptrollerInterface, ComptrollerE
                 updateRewardBorrowIndex(rewardType,address(qiToken), borrowIndex);
                 for (uint j = 0; j < holders.length; j++) {
                     distributeBorrowerReward(rewardType,address(qiToken), holders[j], borrowIndex);
-                    rewardAccrued[rewardType][holders[j]] = grantRewardInternal(rewardType, holders[j], rewardAccrued[rewardType][holders[j]]);
+                    grantRewardInternal(rewardType, holders[j], rewardAccrued[rewardType][holders[j]]);
                 }
             }
             if (suppliers == true) {
                 updateRewardSupplyIndex(rewardType,address(qiToken));
                 for (uint j = 0; j < holders.length; j++) {
                     distributeSupplierReward(rewardType,address(qiToken), holders[j]);
-                    rewardAccrued[rewardType][holders[j]] = grantRewardInternal(rewardType, holders[j], rewardAccrued[rewardType][holders[j]]);
+                    grantRewardInternal(rewardType, holders[j], rewardAccrued[rewardType][holders[j]]);
                 }
             }
         }
@@ -1268,22 +1284,25 @@ contract Comptroller is ComptrollerVXStorage, ComptrollerInterface, ComptrollerE
      * @param amount The amount of AVAX to (possibly) transfer
      * @return The amount of AVAX which was NOT transferred to the user
      */
-    function grantRewardInternal(uint rewardType, address payable user, uint amount) internal returns (uint) {
+    function grantRewardInternal(uint8 rewardType, address payable user, uint amount) internal {
         if (rewardType == 0) {
             Qi benqi = Qi(qiAddress);
             uint qiRemaining = benqi.balanceOf(address(this));
             if (amount > 0 && amount <= qiRemaining) {
+                rewardAccrued[rewardType][user] = 0;
                 benqi.transfer(user, amount);
-                return 0;
+                return;
             }
         } else if (rewardType == 1) {
             uint avaxRemaining = address(this).balance;
             if (amount > 0 && amount <= avaxRemaining) {
-                user.transfer(amount);
-                return 0;
+                rewardAccrued[rewardType][user] = 0;
+                (bool success, ) = user.call.value(amount).gas(4029)("");
+                require(success, "Transfer failed.");
+                return;
             }
         }
-        return amount;
+        rewardAccrued[rewardType][user] = amount;
     }
 
     /*** Benqi Distribution Admin ***/
@@ -1294,10 +1313,11 @@ contract Comptroller is ComptrollerVXStorage, ComptrollerInterface, ComptrollerE
      * @param recipient The address of the recipient to transfer BENQI to
      * @param amount The amount of BENQI to (possibly) transfer
      */
-    function _grantQi(address payable recipient, uint amount) public {
+    function _grantQi(address recipient, uint amount) public {
         require(adminOrInitializing(), "only admin can grant benqi");
-        uint amountLeft = grantRewardInternal(0, recipient, amount);
-        require(amountLeft == 0, "insufficient benqi for grant");
+        require(amount > 0, "amount must be greater than zero");
+        require(amount <= Qi(qiAddress).balanceOf(address(this)), "insufficient benqi for grant");
+        Qi(qiAddress).transfer(recipient, amount);
         emit QiGranted(recipient, amount);
     }
 
@@ -1305,12 +1325,13 @@ contract Comptroller is ComptrollerVXStorage, ComptrollerInterface, ComptrollerE
      * @notice Set reward speed for a single market
      * @param rewardType 0 = QI, 1 = AVAX
      * @param qiToken The market whose reward speed to update
-     * @param rewardSpeed New reward speed for market
+     * @param supplyRewardSpeed New supply reward speed for the market
+     * @param borrowRewardSpeed New borrow reward speed for the market
      */
-    function _setRewardSpeed(uint8 rewardType, QiToken qiToken, uint rewardSpeed) public {
+    function _setRewardSpeed(uint8 rewardType, QiToken qiToken, uint supplyRewardSpeed, uint borrowRewardSpeed) public {
         require(rewardType <= 1, "rewardType is invalid"); 
         require(adminOrInitializing(), "only admin can set reward speed");
-        setRewardSpeedInternal(rewardType, qiToken, rewardSpeed);
+        setRewardSpeedInternal(rewardType, qiToken, supplyRewardSpeed, borrowRewardSpeed);
     }
 
     /**

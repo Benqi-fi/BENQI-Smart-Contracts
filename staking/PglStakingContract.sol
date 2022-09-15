@@ -67,15 +67,8 @@ contract PglStakingContract is ReentrancyGuard, PglStakingContractStorage {
     function claimRewards() external nonReentrant {
         distributeReward(msg.sender);
 
-        for (uint i = 0; i < nofStakingRewards; i += 1) {
-            uint amount = accruedReward[msg.sender][i];
-
-            if (i == REWARD_AVAX) {
-                claimAvax(msg.sender, amount);
-            } else {
-                claimErc20(i, msg.sender, amount);
-            }
-        }
+        uint amount = accruedReward[msg.sender][REWARD_QI];
+        claimErc20(REWARD_QI, msg.sender, amount);
     }
 
     /**
@@ -86,6 +79,11 @@ contract PglStakingContract is ReentrancyGuard, PglStakingContractStorage {
      */
     function getClaimableRewards(uint rewardToken) external view returns(uint) {
         require(rewardToken <= nofStakingRewards, "Invalid reward token");
+
+        // Static reward value for AVAX due to erroneously emitted AVAX
+        if (rewardToken == REWARD_AVAX) {
+            return 0;
+        }
 
         uint rewardIndexDelta = rewardIndex[rewardToken].sub(supplierRewardIndex[msg.sender][rewardToken]);
         uint claimableReward = rewardIndexDelta.mul(supplyAmount[msg.sender]).div(1e36).add(accruedReward[msg.sender][rewardToken]);

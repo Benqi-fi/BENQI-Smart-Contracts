@@ -1,6 +1,6 @@
 pragma solidity 0.5.17;
 
-import "../OpenZeppelin/ReentrancyGuard.sol";
+import "./ReentrancyGuard.sol";
 import "./PglStakingContractProxyStorage.sol";
 
 

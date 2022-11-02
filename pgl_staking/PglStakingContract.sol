@@ -1,8 +1,8 @@
 pragma solidity 0.5.17;
 
-import "../OpenZeppelin/ReentrancyGuard.sol";
-import "../EIP20Interface.sol";
-import "../SafeMath.sol";
+import "./ReentrancyGuard.sol";
+import "./EIP20Interface.sol";
+import "./SafeMath.sol";
 import "./PglStakingContractStorage.sol";
 import "./PglStakingContractProxy.sol";
 
